@@ -2,6 +2,7 @@
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using System;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -21,16 +22,20 @@ public class HelloController : ControllerBase
     {
         try
         {
-            
+            // Decode and sanitize the visitor name
             var visitorName = Uri.UnescapeDataString(visitor_name).Replace("\"", "");
 
-            
-            var client = _httpClientFactory.CreateClient();
-            var ipResponse = await client.GetStringAsync("https://api.ipify.org?format=json");
-            var ipAddress = System.Text.Json.JsonDocument.Parse(ipResponse).RootElement.GetProperty("ip").GetString();
+            // Fetch the client's IP address from the request
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
-            
+            if (string.IsNullOrEmpty(ipAddress))
+            {
+                return StatusCode(500, "Could not determine client's IP address");
+            }
+
+            // Fetch the weather info
             var apiKey = _configuration["API_KEY"];
+            var client = _httpClientFactory.CreateClient();
             var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={ipAddress}&key={apiKey}");
             var weatherJson = System.Text.Json.JsonDocument.Parse(weatherResponse);
             var location = weatherJson.RootElement.GetProperty("location").GetProperty("region").GetString();
@@ -46,7 +51,7 @@ public class HelloController : ControllerBase
         catch (HttpRequestException e)
         {
             Console.WriteLine($"Request error: {e.Message}");
-            return StatusCode(500, "Error fetching IP or weather info");
+            return StatusCode(500, "Error fetching weather info");
         }
     }
 }
