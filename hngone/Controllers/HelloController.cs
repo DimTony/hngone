@@ -21,15 +21,15 @@ public class HelloController : ControllerBase
     {
         try
         {
-            // Decode and sanitize the visitor name
+            
             var visitorName = Uri.UnescapeDataString(visitor_name).Replace("\"", "");
 
-            // Fetch the IP address
+            
             var client = _httpClientFactory.CreateClient();
             var ipResponse = await client.GetStringAsync("https://api.ipify.org?format=json");
             var ipAddress = System.Text.Json.JsonDocument.Parse(ipResponse).RootElement.GetProperty("ip").GetString();
 
-            // Fetch the weather info
+            
             var apiKey = _configuration["API_KEY"];
             var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={ipAddress}&key={apiKey}");
             var weatherJson = System.Text.Json.JsonDocument.Parse(weatherResponse);
