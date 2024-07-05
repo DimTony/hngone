@@ -2,7 +2,8 @@
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using System.Net;
+using Microsoft.Extensions.Logging;
+using System;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -10,11 +11,13 @@ public class HelloController : ControllerBase
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<HelloController> _logger;
 
-    public HelloController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public HelloController(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<HelloController> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -22,62 +25,44 @@ public class HelloController : ControllerBase
     {
         try
         {
+            // Decode and sanitize the visitor name
             var visitorName = Uri.UnescapeDataString(visitor_name).Replace("\"", "");
 
-            string clientIp = await GetClientIpAddress();
+            // Fetch the client's IP address from the request
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
-            if (string.IsNullOrEmpty(clientIp))
+            if (string.IsNullOrEmpty(ipAddress))
             {
-                return BadRequest("Unable to determine client IP address");
+                _logger.LogError("Could not determine client's IP address");
+                return StatusCode(500, "Could not determine client's IP address");
             }
 
-            var client = _httpClientFactory.CreateClient();
+            _logger.LogInformation($"Client IP Address: {ipAddress}");
+
+            // Fetch the weather info
             var apiKey = _configuration["API_KEY"];
-            var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={clientIp}&key={apiKey}");
+            var client = _httpClientFactory.CreateClient();
+            var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={ipAddress}&key={apiKey}");
             var weatherJson = System.Text.Json.JsonDocument.Parse(weatherResponse);
             var location = weatherJson.RootElement.GetProperty("location").GetProperty("region").GetString();
             var temperature = weatherJson.RootElement.GetProperty("current").GetProperty("temp_c").GetDecimal();
 
             return Ok(new
             {
-                client_ip = clientIp,
+                client_ip = ipAddress,
                 location = location,
-                greeting = $"Hello, {visitorName}! The temperature is {temperature} degrees Celsius in {location}"
+                greeting = $"Hello, {visitorName}!, the temperature is {temperature} degrees Celsius in {location}"
             });
         }
         catch (HttpRequestException e)
         {
-            Console.WriteLine($"Request error: {e.Message}");
+            _logger.LogError($"Request error: {e.Message}");
             return StatusCode(500, "Error fetching weather info");
         }
-    }
-
-    private async Task<string> GetClientIpAddress()
-    {
-        var ipAddress = HttpContext.Connection.RemoteIpAddress;
-
-        if (ipAddress != null)
+        catch (Exception e)
         {
-            // If we're dealing with a localhost address, get the public IP
-            if (IPAddress.IsLoopback(ipAddress))
-            {
-                var client = _httpClientFactory.CreateClient();
-                var response = await client.GetAsync("https://api.ipify.org");
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadAsStringAsync();
-                }
-            }
-
-            // Convert IPv6 address to IPv4 if it's an IPv4-mapped IPv6 address
-            if (ipAddress.IsIPv4MappedToIPv6)
-            {
-                ipAddress = ipAddress.MapToIPv4();
-            }
-
-            return ipAddress.ToString();
+            _logger.LogError($"Unexpected error: {e.Message}");
+            return StatusCode(500, "An unexpected error occurred");
         }
-
-        return null;
     }
 }
