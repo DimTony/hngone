@@ -2,7 +2,7 @@
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using System;
+using System.Net;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -22,30 +22,27 @@ public class HelloController : ControllerBase
     {
         try
         {
-            // Decode and sanitize the visitor name
             var visitorName = Uri.UnescapeDataString(visitor_name).Replace("\"", "");
 
-            // Fetch the client's IP address from the request
-            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            string clientIp = await GetClientIpAddress();
 
-            if (string.IsNullOrEmpty(ipAddress))
+            if (string.IsNullOrEmpty(clientIp))
             {
-                return StatusCode(500, "Could not determine client's IP address");
+                return BadRequest("Unable to determine client IP address");
             }
 
-            // Fetch the weather info
-            var apiKey = _configuration["API_KEY"];
             var client = _httpClientFactory.CreateClient();
-            var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={ipAddress}&key={apiKey}");
+            var apiKey = _configuration["API_KEY"];
+            var weatherResponse = await client.GetStringAsync($"https://api.weatherapi.com/v1/current.json?q={clientIp}&key={apiKey}");
             var weatherJson = System.Text.Json.JsonDocument.Parse(weatherResponse);
             var location = weatherJson.RootElement.GetProperty("location").GetProperty("region").GetString();
             var temperature = weatherJson.RootElement.GetProperty("current").GetProperty("temp_c").GetDecimal();
 
             return Ok(new
             {
-                client_ip = ipAddress,
+                client_ip = clientIp,
                 location = location,
-                greeting = $"Hello, {visitorName}!, the temperature is {temperature} degrees Celsius in {location}"
+                greeting = $"Hello, {visitorName}! The temperature is {temperature} degrees Celsius in {location}"
             });
         }
         catch (HttpRequestException e)
@@ -53,5 +50,34 @@ public class HelloController : ControllerBase
             Console.WriteLine($"Request error: {e.Message}");
             return StatusCode(500, "Error fetching weather info");
         }
+    }
+
+    private async Task<string> GetClientIpAddress()
+    {
+        var ipAddress = HttpContext.Connection.RemoteIpAddress;
+
+        if (ipAddress != null)
+        {
+            // If we're dealing with a localhost address, get the public IP
+            if (IPAddress.IsLoopback(ipAddress))
+            {
+                var client = _httpClientFactory.CreateClient();
+                var response = await client.GetAsync("https://api.ipify.org");
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadAsStringAsync();
+                }
+            }
+
+            // Convert IPv6 address to IPv4 if it's an IPv4-mapped IPv6 address
+            if (ipAddress.IsIPv4MappedToIPv6)
+            {
+                ipAddress = ipAddress.MapToIPv4();
+            }
+
+            return ipAddress.ToString();
+        }
+
+        return null;
     }
 }
