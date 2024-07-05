@@ -2,7 +2,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
-builder.Services.AddControllers();  // Add this line to include controllers
+builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
@@ -10,7 +11,6 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -22,9 +22,7 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapRazorPages();
-app.MapControllers();  // Add this line to map controllers
+app.MapControllers();
 
-// Define a simple minimal API endpoint
-app.MapGet("/api/hello", () => "Hello, World!");
 
 app.Run();
